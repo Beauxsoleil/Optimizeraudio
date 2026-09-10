@@ -1,394 +1,44 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Speech Optimizer — Interview Audio to Transcription-Ready MP3</title>
-<style>
-  :root {
-    --bg: #0f1210;
-    --panel: #171b18;
-    --panel-line: #262c27;
-    --text: #ecefec;
-    --muted: #8a938c;
-    --signal: #7fe3a6;
-    --signal-dim: #4a7d63;
-    --warn: #e3a857;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    line-height: 1.5;
-  }
-  .mono {
-    font-family: 'IBM Plex Mono', 'SF Mono', Menlo, Consolas, monospace;
-  }
-  .wrap {
-    max-width: 620px;
-    margin: 0 auto;
-    padding: 48px 20px 80px;
-  }
-  header {
-    margin-bottom: 36px;
-  }
-  .meter {
-    display: flex;
-    gap: 3px;
-    height: 28px;
-    margin-bottom: 20px;
-    align-items: flex-end;
-  }
-  .meter span {
-    flex: 1;
-    background: var(--signal-dim);
-    border-radius: 1px;
-    animation: bounce 2.4s ease-in-out infinite;
-    animation-play-state: paused;
-  }
-  .meter.live span { animation-play-state: running; }
-  .meter span:nth-child(odd) { animation-duration: 1.9s; }
-  .meter span:nth-child(3n) { animation-duration: 2.7s; animation-delay: -0.4s; }
-  .meter span:nth-child(5n) { animation-duration: 1.3s; animation-delay: -0.8s; }
-  @keyframes bounce {
-    0%, 100% { height: 15%; background: var(--signal-dim); }
-    50% { height: 90%; background: var(--signal); }
-  }
-  h1 {
-    font-size: 22px;
-    font-weight: 600;
-    margin: 0 0 8px;
-    letter-spacing: -0.01em;
-  }
-  .sub {
-    color: var(--muted);
-    font-size: 14px;
-    max-width: 46ch;
-  }
-  .panel {
-    background: var(--panel);
-    border: 1px solid var(--panel-line);
-    border-radius: 10px;
-    padding: 28px;
-    margin-bottom: 20px;
-  }
-  .drop {
-    border: 1px dashed var(--panel-line);
-    border-radius: 8px;
-    padding: 36px 20px;
-    text-align: center;
-    cursor: pointer;
-    transition: border-color 0.15s ease, background 0.15s ease;
-  }
-  .drop:hover, .drop.hover {
-    border-color: var(--signal-dim);
-    background: rgba(127, 227, 166, 0.04);
-  }
-  .drop input { display: none; }
-  .drop-label {
-    font-size: 14px;
-    color: var(--text);
-  }
-  .drop-hint {
-    font-size: 12px;
-    color: var(--muted);
-    margin-top: 6px;
-  }
-  .file-chip {
-    display: none;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--bg);
-    border: 1px solid var(--panel-line);
-    border-radius: 6px;
-    padding: 10px 14px;
-    font-size: 13px;
-    margin-top: 14px;
-  }
-  .file-chip.show { display: flex; }
-  .file-chip .name { color: var(--text); }
-  .file-chip .size { color: var(--muted); }
-  button.run {
-    width: 100%;
-    margin-top: 18px;
-    padding: 13px;
-    border-radius: 6px;
-    border: none;
-    background: var(--signal);
-    color: #0a1510;
-    font-weight: 600;
-    font-size: 14px;
-    cursor: pointer;
-    transition: opacity 0.15s ease;
-  }
-  button.run:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-  }
-  button.run:not(:disabled):hover {
-    opacity: 0.9;
-  }
-  .log {
-    display: none;
-    margin-top: 18px;
-    background: var(--bg);
-    border: 1px solid var(--panel-line);
-    border-radius: 6px;
-    padding: 14px 16px;
-    font-size: 12px;
-    color: var(--muted);
-    max-height: 160px;
-    overflow-y: auto;
-    white-space: pre-wrap;
-  }
-  .log.show { display: block; }
-  .log .line { margin-bottom: 2px; }
-  .log .line.active { color: var(--signal); }
-  .result {
-    display: none;
-    margin-top: 18px;
-    border-top: 1px solid var(--panel-line);
-    padding-top: 18px;
-  }
-  .result.show { display: block; }
-  .result-row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 13px;
-    padding: 5px 0;
-    color: var(--muted);
-  }
-  .result-row span:last-child { color: var(--text); }
-  a.download {
-    display: block;
-    text-align: center;
-    margin-top: 14px;
-    padding: 13px;
-    border-radius: 6px;
-    background: transparent;
-    border: 1px solid var(--signal);
-    color: var(--signal);
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 14px;
-  }
-  a.download:hover { background: rgba(127, 227, 166, 0.08); }
-  details {
-    color: var(--muted);
-    font-size: 13px;
-  }
-  details summary {
-    cursor: pointer;
-    color: var(--text);
-    margin-bottom: 10px;
-  }
-  .spec {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px 20px;
-    font-size: 12px;
-  }
-  .spec div { display: flex; justify-content: space-between; border-bottom: 1px solid var(--panel-line); padding-bottom: 4px; }
-  .spec div span:last-child { color: var(--text); }
-  footer {
-    margin-top: 30px;
-    font-size: 12px;
-    color: var(--muted);
-  }
-  footer a { color: var(--signal-dim); }
-</style>
-</head>
-<body>
-<div class="wrap">
 
-  <header>
-    <div class="meter" id="meter">
-      <span></span><span></span><span></span><span></span><span></span>
-      <span></span><span></span><span></span><span></span><span></span>
-      <span></span><span></span><span></span><span></span><span></span>
-      <span></span><span></span><span></span><span></span><span></span>
-    </div>
-    <h1>Speech Optimizer</h1>
-    <div class="sub">Converts an interview recording into a mono, 16&nbsp;kHz, 64&nbsp;kbps MP3 sized for transcription pipelines. Runs entirely in your browser — the audio never leaves your device.</div>
-  </header>
 
-  <div class="panel">
-    <div class="drop" id="drop">
-      <input type="file" id="fileInput" accept="audio/*,.m4a,.mp3,.wav,.aac,.flac,.ogg">
-      <div class="drop-label">Drop an audio file here, or click to choose one</div>
-      <div class="drop-hint mono">.m4a · .mp3 · .wav · .aac · .flac</div>
-    </div>
-    <div class="file-chip" id="fileChip">
-      <span class="name mono" id="fileName"></span>
-      <span class="size mono" id="fileSize"></span>
-    </div>
-    <button class="run" id="runBtn" disabled>Convert</button>
-    <div class="log mono" id="log"></div>
-    <div class="result" id="result">
-      <div class="result-row"><span>Output</span><span id="outName"></span></div>
-      <div class="result-row"><span>Size</span><span id="outSize"></span></div>
-      <div class="result-row"><span>Format</span><span>MP3 · 16kHz · mono · 64kbps</span></div>
-      <a class="download" id="downloadLink" download>Download converted file</a>
-    </div>
-  </div>
 
-  <details>
-    <summary>What this does, exactly</summary>
-    <p>Runs the equivalent of this FFmpeg command in-browser:</p>
-    <div class="spec">
-      <div><span>Channels</span><span>Stereo → mono</span></div>
-      <div><span>Sample rate</span><span>→ 16,000 Hz</span></div>
-      <div><span>Codec</span><span>→ MP3 (libmp3lame)</span></div>
-      <div><span>Bitrate</span><span>64 kbps constant</span></div>
-      <div><span>Metadata</span><span>Stripped</span></div>
-      <div><span>Trimming / silence removal</span><span>None</span></div>
-      <div><span>Loudness normalization</span><span>None</span></div>
-      <div><span>Speed / pitch</span><span>Unchanged</span></div>
-    </div>
-  </details>
 
-  <footer>
-    Powered by <a href="https://github.com/ffmpegwasm/ffmpeg.wasm" target="_blank" rel="noopener">ffmpeg.wasm</a>. First conversion loads a ~30MB WebAssembly core, cached afterward.
-  </footer>
 
-</div>
 
-<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js" crossorigin="anonymous"></script>
-<script>
-if (!window.FFmpegWASM || !window.FFmpegUtil) {
-  document.addEventListener('DOMContentLoaded', () => {
-    logLine('Could not load the FFmpeg library from the CDN. Check your internet connection, ad blocker, or that this page is served over http(s):// rather than opened as a local file.');
-  });
-}
 
-const { FFmpeg } = window.FFmpegWASM || {};
-const { fetchFile, toBlobURL } = window.FFmpegUtil || {};
 
-let ffmpeg = null;
-let ffmpegLoaded = false;
-let selectedFile = null;
 
-const drop = document.getElementById('drop');
-const fileInput = document.getElementById('fileInput');
-const fileChip = document.getElementById('fileChip');
-const fileName = document.getElementById('fileName');
-const fileSize = document.getElementById('fileSize');
-const runBtn = document.getElementById('runBtn');
-const logEl = document.getElementById('log');
-const resultEl = document.getElementById('result');
-const meter = document.getElementById('meter');
 
-function fmtBytes(b) {
-  if (b < 1024) return b + ' B';
-  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
-  return (b/1024/1024).toFixed(2) + ' MB';
-}
 
-function logLine(text, active=false) {
-  logEl.classList.add('show');
-  const div = document.createElement('div');
-  div.className = 'line' + (active ? ' active' : '');
-  div.textContent = text;
-  logEl.appendChild(div);
-  logEl.scrollTop = logEl.scrollHeight;
-}
 
-drop.addEventListener('click', () => fileInput.click());
-drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('hover'); });
-drop.addEventListener('dragleave', () => drop.classList.remove('hover'));
-drop.addEventListener('drop', e => {
-  e.preventDefault();
-  drop.classList.remove('hover');
-  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
-});
-fileInput.addEventListener('change', e => {
-  if (e.target.files.length) handleFile(e.target.files[0]);
-});
 
-function handleFile(file) {
-  selectedFile = file;
-  fileName.textContent = file.name;
-  fileSize.textContent = fmtBytes(file.size);
-  fileChip.classList.add('show');
-  runBtn.disabled = false;
-  resultEl.classList.remove('show');
-  logEl.innerHTML = '';
-  logEl.classList.remove('show');
-}
 
-async function ensureFFmpeg() {
-  if (ffmpegLoaded) return;
-  logLine('Loading conversion engine…', true);
-  ffmpeg = new FFmpeg();
-  ffmpeg.on('log', ({ message }) => {
-    // surface a trimmed version of ffmpeg's own log
-    if (message && !message.startsWith('  ')) logLine(message);
-  });
-  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
-  await ffmpeg.load({
-    coreURL: await toBlobURL(baseURL + '/ffmpeg-core.js', 'text/javascript'),
-    wasmURL: await toBlobURL(baseURL + '/ffmpeg-core.wasm', 'application/wasm'),
-  });
-  ffmpegLoaded = true;
-  logLine('Engine ready.');
-}
 
-runBtn.addEventListener('click', async () => {
-  if (!selectedFile) return;
-  runBtn.disabled = true;
-  meter.classList.add('live');
-  resultEl.classList.remove('show');
-  logEl.innerHTML = '';
 
-  try {
-    await ensureFFmpeg();
 
-    const inputName = 'input' + (selectedFile.name.match(/\.[^.]+$/)?.[0] || '.dat');
-    const outputName = selectedFile.name.replace(/\.[^.]+$/, '') + '-optimized.mp3';
 
-    logLine('Writing file into engine…');
-    await ffmpeg.writeFile(inputName, await fetchFile(selectedFile));
 
-    logLine('Decoding, downmixing to mono, resampling to 16kHz, encoding MP3…', true);
-    await ffmpeg.exec([
-      '-i', inputName,
-      '-map', '0:a:0',
-      '-vn',
-      '-ac', '1',
-      '-ar', '16000',
-      '-c:a', 'libmp3lame',
-      '-b:a', '64k',
-      '-map_metadata', '-1',
-      '-id3v2_version', '3',
-      outputName
-    ]);
 
-    logLine('Reading output…');
-    const data = await ffmpeg.readFile(outputName);
-    const blob = new Blob([data.buffer], { type: 'audio/mpeg' });
-    const url = URL.createObjectURL(blob);
-
-    document.getElementById('outName').textContent = outputName;
-    document.getElementById('outSize').textContent = fmtBytes(blob.size) + ' (from ' + fmtBytes(selectedFile.size) + ')';
-    const link = document.getElementById('downloadLink');
-    link.href = url;
-    link.download = outputName;
-    resultEl.classList.add('show');
-    logLine('Done.');
-
-    await ffmpeg.deleteFile(inputName);
-    await ffmpeg.deleteFile(outputName);
-  } catch (err) {
-    logLine('Error: ' + err.message);
-    console.error(err);
-  } finally {
-    meter.classList.remove('live');
-    runBtn.disabled = false;
-  }
-});
-</script>
-</body>
-</html>
+Speech Optimizer
+Converts an interview recording into a mono, 16 kHz, 64 kbps MP3 sized for transcription pipelines. Runs entirely in your browser — the audio never leaves your device.
+Drop an audio file here, or click to choose one
+.m4a · .mp3 · .wav · .aac · .flac
+Convert
+What this does, exactly
+Runs the equivalent of this FFmpeg command in-browser:
+Channels
+Stereo → mono
+Sample rate
+→ 16,000 Hz
+Codec
+→ MP3 (libmp3lame)
+Bitrate
+64 kbps constant
+Metadata
+Stripped
+Trimming / silence removal
+None
+Loudness normalization
+None
+Speed / pitch
+Unchanged
+Powered by ffmpeg.wasm. First conversion loads a ~30MB WebAssembly core, cached afterward.
