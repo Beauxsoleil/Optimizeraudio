@@ -130,9 +130,24 @@
   button.run:not(:disabled):hover {
     opacity: 0.9;
   }
+  .status {
+    display: none;
+    margin-top: 14px;
+    background: var(--bg);
+    border: 1px solid var(--panel-line);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .status.show { display: block; }
+  .status.warn {
+    color: var(--warn);
+    border-color: rgba(227, 168, 87, 0.4);
+  }
   .log {
     display: none;
-    margin-top: 18px;
+    margin-top: 12px;
     background: var(--bg);
     border: 1px solid var(--panel-line);
     border-radius: 6px;
@@ -211,7 +226,7 @@
       <span></span><span></span><span></span><span></span><span></span>
     </div>
     <h1>Speech Optimizer</h1>
-    <div class="sub">Converts an interview recording into a mono, 16&nbsp;kHz, 64&nbsp;kbps MP3 sized for transcription pipelines. Runs entirely in your browser — the audio never leaves your device.</div>
+    <div class="sub">Converts an interview recording into a mono, 16&nbsp;kHz, 64&nbsp;kbps MP3 sized for transcription pipelines. Runs entirely in your browser — the audio never leaves your device. The ~32&nbsp;MB engine is downloaded from this site once, then cached.</div>
   </header>
 
   <div class="panel">
@@ -225,6 +240,7 @@
       <span class="size mono" id="fileSize"></span>
     </div>
     <button class="run" id="runBtn" disabled>Convert</button>
+    <div class="status mono" id="status"><span id="statusText"></span></div>
     <div class="log mono" id="log"></div>
     <div class="result" id="result">
       <div class="result-row"><span>Output</span><span id="outName"></span></div>
@@ -250,145 +266,12 @@
   </details>
 
   <footer>
-    Powered by <a href="https://github.com/ffmpegwasm/ffmpeg.wasm" target="_blank" rel="noopener">ffmpeg.wasm</a>. First conversion loads a ~30MB WebAssembly core, cached afterward.
+    Powered by <a href="https://github.com/ffmpegwasm/ffmpeg.wasm" target="_blank" rel="noopener">ffmpeg.wasm</a>, served from this site — no third-party file servers involved. Your browser caches the engine after the first visit, so later conversions start instantly.
   </footer>
 
 </div>
 
-<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js" crossorigin="anonymous"></script>
-<script>
-if (!window.FFmpegWASM || !window.FFmpegUtil) {
-  document.addEventListener('DOMContentLoaded', () => {
-    logLine('Could not load the FFmpeg library from the CDN. Check your internet connection, ad blocker, or that this page is served over http(s):// rather than opened as a local file.');
-  });
-}
-
-const { FFmpeg } = window.FFmpegWASM || {};
-const { fetchFile, toBlobURL } = window.FFmpegUtil || {};
-
-let ffmpeg = null;
-let ffmpegLoaded = false;
-let selectedFile = null;
-
-const drop = document.getElementById('drop');
-const fileInput = document.getElementById('fileInput');
-const fileChip = document.getElementById('fileChip');
-const fileName = document.getElementById('fileName');
-const fileSize = document.getElementById('fileSize');
-const runBtn = document.getElementById('runBtn');
-const logEl = document.getElementById('log');
-const resultEl = document.getElementById('result');
-const meter = document.getElementById('meter');
-
-function fmtBytes(b) {
-  if (b < 1024) return b + ' B';
-  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
-  return (b/1024/1024).toFixed(2) + ' MB';
-}
-
-function logLine(text, active=false) {
-  logEl.classList.add('show');
-  const div = document.createElement('div');
-  div.className = 'line' + (active ? ' active' : '');
-  div.textContent = text;
-  logEl.appendChild(div);
-  logEl.scrollTop = logEl.scrollHeight;
-}
-
-drop.addEventListener('click', () => fileInput.click());
-drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('hover'); });
-drop.addEventListener('dragleave', () => drop.classList.remove('hover'));
-drop.addEventListener('drop', e => {
-  e.preventDefault();
-  drop.classList.remove('hover');
-  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
-});
-fileInput.addEventListener('change', e => {
-  if (e.target.files.length) handleFile(e.target.files[0]);
-});
-
-function handleFile(file) {
-  selectedFile = file;
-  fileName.textContent = file.name;
-  fileSize.textContent = fmtBytes(file.size);
-  fileChip.classList.add('show');
-  runBtn.disabled = false;
-  resultEl.classList.remove('show');
-  logEl.innerHTML = '';
-  logEl.classList.remove('show');
-}
-
-async function ensureFFmpeg() {
-  if (ffmpegLoaded) return;
-  logLine('Loading conversion engine…', true);
-  ffmpeg = new FFmpeg();
-  ffmpeg.on('log', ({ message }) => {
-    // surface a trimmed version of ffmpeg's own log
-    if (message && !message.startsWith('  ')) logLine(message);
-  });
-  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
-  await ffmpeg.load({
-    coreURL: await toBlobURL(baseURL + '/ffmpeg-core.js', 'text/javascript'),
-    wasmURL: await toBlobURL(baseURL + '/ffmpeg-core.wasm', 'application/wasm'),
-  });
-  ffmpegLoaded = true;
-  logLine('Engine ready.');
-}
-
-runBtn.addEventListener('click', async () => {
-  if (!selectedFile) return;
-  runBtn.disabled = true;
-  meter.classList.add('live');
-  resultEl.classList.remove('show');
-  logEl.innerHTML = '';
-
-  try {
-    await ensureFFmpeg();
-
-    const inputName = 'input' + (selectedFile.name.match(/\.[^.]+$/)?.[0] || '.dat');
-    const outputName = selectedFile.name.replace(/\.[^.]+$/, '') + '-optimized.mp3';
-
-    logLine('Writing file into engine…');
-    await ffmpeg.writeFile(inputName, await fetchFile(selectedFile));
-
-    logLine('Decoding, downmixing to mono, resampling to 16kHz, encoding MP3…', true);
-    await ffmpeg.exec([
-      '-i', inputName,
-      '-map', '0:a:0',
-      '-vn',
-      '-ac', '1',
-      '-ar', '16000',
-      '-c:a', 'libmp3lame',
-      '-b:a', '64k',
-      '-map_metadata', '-1',
-      '-id3v2_version', '3',
-      outputName
-    ]);
-
-    logLine('Reading output…');
-    const data = await ffmpeg.readFile(outputName);
-    const blob = new Blob([data.buffer], { type: 'audio/mpeg' });
-    const url = URL.createObjectURL(blob);
-
-    document.getElementById('outName').textContent = outputName;
-    document.getElementById('outSize').textContent = fmtBytes(blob.size) + ' (from ' + fmtBytes(selectedFile.size) + ')';
-    const link = document.getElementById('downloadLink');
-    link.href = url;
-    link.download = outputName;
-    resultEl.classList.add('show');
-    logLine('Done.');
-
-    await ffmpeg.deleteFile(inputName);
-    await ffmpeg.deleteFile(outputName);
-  } catch (err) {
-    logLine('Error: ' + err.message);
-    console.error(err);
-  } finally {
-    meter.classList.remove('live');
-    runBtn.disabled = false;
-  }
-});
-</script>
+<script src="vendor/ffmpeg.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
