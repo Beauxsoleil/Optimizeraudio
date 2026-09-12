@@ -171,7 +171,10 @@
       });
 
       setStatus('Starting the engine…');
-      await ff.load({ coreURL: CORE_JS, wasmURL: wasmURL });
+      // The FFmpeg wrapper forwards coreURL to a worker running from vendor/.
+      // Make it absolute so the worker does not resolve it as vendor/vendor/… .
+      var coreURL = new URL(CORE_JS, window.location.href).href;
+      await ff.load({ coreURL: coreURL, wasmURL: wasmURL });
       ffmpeg = ff;
       setStatus('Engine ready ✓');
     })().then(
